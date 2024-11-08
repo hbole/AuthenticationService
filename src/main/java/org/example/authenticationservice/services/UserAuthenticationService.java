@@ -1,8 +1,12 @@
 package org.example.authenticationservice.services;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
+import org.example.authenticationservice.clients.KafkaProducerClient;
+import org.example.authenticationservice.dto.EmailNotificationDTO;
 import org.example.authenticationservice.exceptions.UserAlreadyExistsException;
 import org.example.authenticationservice.exceptions.UserNotFoundException;
 import org.example.authenticationservice.exceptions.WrongPasswordException;
@@ -25,17 +29,23 @@ public class UserAuthenticationService implements IAuthService {
     private final BCryptPasswordEncoder bCryptPasswordEncoder;
     private final SessionRepository sessionRepository;
     private final SecretKey secretKey;
+    private final KafkaProducerClient kafkaProducerClient;
+    private final ObjectMapper objectMapper;
 
     public UserAuthenticationService(
             UserRepository userRepository,
             BCryptPasswordEncoder bCryptPasswordEncoder,
             SecretKey secretKey,
-            SessionRepository sessionRepository
+            SessionRepository sessionRepository,
+            KafkaProducerClient kafkaProducerClient,
+            ObjectMapper objectMapper
     ) {
         this.userRepository = userRepository;
         this.bCryptPasswordEncoder = bCryptPasswordEncoder;
         this.secretKey = secretKey;
         this.sessionRepository = sessionRepository;
+        this.kafkaProducerClient = kafkaProducerClient;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -49,6 +59,20 @@ public class UserAuthenticationService implements IAuthService {
         newUser.setEmail(email);
         newUser.setPassword(bCryptPasswordEncoder.encode(password));
         userRepository.save(newUser);
+
+        //Send email
+        try {
+            EmailNotificationDTO emailNotificationDTO = new EmailNotificationDTO();
+            emailNotificationDTO.setFromEmail("anuragbatch@gmail.com");
+            emailNotificationDTO.setToEmail(email);
+            emailNotificationDTO.setSubject("Welcome to Scaler");
+            emailNotificationDTO.setBody("Hope you have a fun learning ahead!!");
+
+            kafkaProducerClient.sendMessage("onboarding", objectMapper.writeValueAsString(emailNotificationDTO));
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e.getMessage());
+        }
+
         return true;
     }
 
